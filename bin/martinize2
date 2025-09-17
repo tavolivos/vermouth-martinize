@@ -1,4 +1,4 @@
-#!/home/golivos/miniforge3/bin/python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # Copyright 2018 University of Groningen
 #
@@ -1176,7 +1176,7 @@ def entry():
                            C6C12=False,
                            defines=defines)
 
-    # ======= NUEVO: decidir formato de -x por extensión =======
+    # ======= NEW: decide -x output format based on extension =======
     out_is_gro = False
     gro_path = None
     if args.outpath is not None:
@@ -1185,7 +1185,7 @@ def entry():
             out_is_gro = True
             gro_path = str(args.outpath)
         else:
-            # comportamiento histórico: PDB (diferido)
+            # historical behavior: PDB (deferred)
             vermouth.pdb.write_pdb(system, str(args.outpath), omit_charges=True)
     # ===========================================================
 
@@ -1203,9 +1203,9 @@ def entry():
         )
         sys.exit(2)
     else:
-        # Si la salida es GRO, escribir ahora (tras pasar validaciones)
+        # If the output is GRO, write it now (after validations)
         if out_is_gro and gro_path:
-            # Intentamos recuperar caja desde system o moléculas; por defecto (0,0,0)
+            # Try to recover the box from system or molecules; default to (0,0,0)
             box = None
             if getattr(system, "box", None):
                 box = system.box

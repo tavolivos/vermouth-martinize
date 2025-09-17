@@ -364,13 +364,13 @@ def _make_surface(position, fiba, fibb, vrad):
 
 def atom2res(arrin, nresidues, atom_map, norm=False):
     """
-    Suma (o binariza) entradas a nivel residuo.
-    - Si arrin es denso (ndarray): mantiene el comportamiento original.
-    - Si arrin es esparso: agrega sólo pares no nulos, evitando O(nres^2).
+    Sum (or binarize) entries at the residue level.
+    - If `arrin` is dense (ndarray): keep the original behavior.
+    - If `arrin` is sparse: aggregate only non-zero pairs, avoiding O(nres^2).
     """
     out = np.zeros((nresidues, nresidues), dtype=np.uint32)
 
-    # Construir mapa inverso: atom_idx -> res_idx (0..nres-1)
+    # Build inverse map: atom_idx -> res_idx (0..nres-1)
     # atom_map: {res_idx: np.array(atom_indices)}
     natoms = sum(len(v) for v in atom_map.values())
     res_of_atom = np.empty(natoms, dtype=np.int32)
@@ -380,7 +380,7 @@ def atom2res(arrin, nresidues, atom_map, norm=False):
     if sp.issparse(arrin):
         coo = arrin.tocoo()
         if norm:
-            # Sólo presencia/ausencia
+            # Presence/absence only
             seen = set()
             for i, j in zip(coo.row, coo.col):
                 ri = res_of_atom[i]
@@ -390,14 +390,14 @@ def atom2res(arrin, nresidues, atom_map, norm=False):
                     out[ri, rj] = 1
                     seen.add(key)
         else:
-            # Sumatoria de valores
+            # Sum of values
             for i, j, v in zip(coo.row, coo.col, coo.data):
                 ri = res_of_atom[i]
                 rj = res_of_atom[j]
                 out[ri, rj] += int(v)
         return out
 
-    # --- camino original (denso) ---
+    # --- original dense path ---
     for res_idx, res_jdx in product(atom_map.keys(), atom_map.keys()):
         atom_idxs = atom_map[res_idx]
         atom_jdxs = atom_map[res_jdx][:, np.newaxis]
