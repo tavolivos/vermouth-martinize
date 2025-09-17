@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/home/golivos/miniforge3/bin/python
 # -*- coding: utf-8 -*-
 # Copyright 2018 University of Groningen
 #
@@ -17,6 +17,9 @@
 """
 High level API for Martinize2
 """
+from pathlib import Path
+from vermouth.pdb.pdb import write_pdb
+from vermouth.gmx.gro import write_gro
 
 import argparse
 import functools
@@ -80,7 +83,7 @@ VERSION = "martinize with vermouth {}".format(vermouth.__version__)
 
 def read_system(path, ignore_resnames=(), ignh=None, modelidx=None):
     """
-    Read a system from a PDB or GRO file.
+    Read a system from a PDB, GRO or CIF file.
 
     This function guesses the file type based on the file extension.
 
@@ -297,14 +300,14 @@ def entry():
 
     file_group = parser.add_argument_group("Input and output files")
     file_group.add_argument(
-        "-f", dest="inpath", required=False, type=Path, help="Input file (PDB|GRO)"
+        "-f", dest="inpath", required=False, type=Path, help="Input file (PDB|GRO|CIF)"
     )
     file_group.add_argument(
         "-x",
         dest="outpath",
         required=False,
         type=Path,
-        help="Output coarse grained structure (PDB)",
+        help="Output coarse grained structure (PDB or GRO; choose by file extension)",
     )
     file_group.add_argument(
         "-o", dest="top_path", type=Path, help="Output topology (TOP)"
@@ -687,17 +690,11 @@ def entry():
         default=[],
         help="Add a modification to a residue. Desired "
         "modification is specified as, e.g. A-ASP45:ASP0. "
-        "The format is <chain>-<resname><resid>:[+]<modification>."
+        "The format is <chain>-<resname><resid>:<modification>."
         " Elements of the specification can be omitted as "
         "required. e.g. ASP45:ASP0 will modify all ASP with "
         "resid 45 to ASP0, A-ASP:ASP0 will modify all ASP on "
-        "chain A to ASP0. By default the modifications specified this way will "
-        "override any modifications found in the input file. If instead you "
-        "want to *add* modifications in addition to what's already in the "
-        "input file, add '+' to the modification specification. For example, "
-        "'A-HIS1:+HSE' to add the HSE modification to any automatically "
-        "determined terminal modifications."
-        ,
+        "chain A to ASP0",
     )
     prot_group.add_argument(
         "-nter",
@@ -891,17 +888,17 @@ def entry():
         ignore_res.update(*grp)
 
     if args.neutral_termini:
-        args.modifications.append(["cter", "+COOH-ter"])
-        args.modifications.append(["nter", "+NH2-ter"])
+        args.modifications.append(["cter", "COOH-ter"])
+        args.modifications.append(["nter", "NH2-ter"])
     else:
         if args.modifications:
             resspecs, mods = zip(*args.modifications)
         else:
             resspecs, mods = [], []
         if not any("cter" in resspec for resspec in resspecs):
-            args.modifications.append(["cter", "+C-ter"])
+            args.modifications.append(["cter", "C-ter"])
         if not any("nter" in resspec for resspec in resspecs):
-            args.modifications.append(["nter", "+N-ter"])
+            args.modifications.append(["nter", "N-ter"])
 
     # Reading the input structure.
     # So far, we assume we only go from atomistic to martini. We want the
@@ -1172,7 +1169,6 @@ def entry():
                     LOGGER.log(loglevel, entry, **fmt_arg, type="model")
 
     # Write the topology if requested
-
     if args.top_path is not None:
         write_gmx_topology(system,
                            args.top_path,
@@ -1180,8 +1176,18 @@ def entry():
                            C6C12=False,
                            defines=defines)
 
-    # Write a PDB file.
-    vermouth.pdb.write_pdb(system, str(args.outpath), omit_charges=True)
+    # ======= NUEVO: decidir formato de -x por extensión =======
+    out_is_gro = False
+    gro_path = None
+    if args.outpath is not None:
+        ext = args.outpath.suffix.lower()
+        if ext == ".gro":
+            out_is_gro = True
+            gro_path = str(args.outpath)
+        else:
+            # comportamiento histórico: PDB (diferido)
+            vermouth.pdb.write_pdb(system, str(args.outpath), omit_charges=True)
+    # ===========================================================
 
     # TODO: allow ignoring warnings per class/amount (i.e. ignore 2
     #       inconsistent-data warnings)
@@ -1197,6 +1203,21 @@ def entry():
         )
         sys.exit(2)
     else:
+        # Si la salida es GRO, escribir ahora (tras pasar validaciones)
+        if out_is_gro and gro_path:
+            # Intentamos recuperar caja desde system o moléculas; por defecto (0,0,0)
+            box = None
+            if getattr(system, "box", None):
+                box = system.box
+            else:
+                for mol in getattr(system, "molecules", []):
+                    if getattr(mol, "box", None):
+                        box = mol.box
+                        break
+            if not box:
+                box = (0.0, 0.0, 0.0)
+            vermouth.gmx.gro.write_gro(system, gro_path, box=box)
+
         DeferredFileWriter().write()
         vermouth.Quoter().run_system(system)
 

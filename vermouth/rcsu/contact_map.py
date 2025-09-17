@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from scipy import sparse as sp
+
 from ..processors.processor import Processor
 import numpy as np
 from scipy.spatial.distance import euclidean
@@ -361,11 +363,41 @@ def _make_surface(position, fiba, fibb, vrad):
 
 
 def atom2res(arrin, nresidues, atom_map, norm=False):
-    '''
-    take an array with atom level data and sum the entries over within the residue
-    '''
+    """
+    Suma (o binariza) entradas a nivel residuo.
+    - Si arrin es denso (ndarray): mantiene el comportamiento original.
+    - Si arrin es esparso: agrega sólo pares no nulos, evitando O(nres^2).
+    """
+    out = np.zeros((nresidues, nresidues), dtype=np.uint32)
 
-    out = np.zeros((nresidues, nresidues))
+    # Construir mapa inverso: atom_idx -> res_idx (0..nres-1)
+    # atom_map: {res_idx: np.array(atom_indices)}
+    natoms = sum(len(v) for v in atom_map.values())
+    res_of_atom = np.empty(natoms, dtype=np.int32)
+    for r_idx, atom_idxs in atom_map.items():
+        res_of_atom[atom_idxs] = r_idx
+
+    if sp.issparse(arrin):
+        coo = arrin.tocoo()
+        if norm:
+            # Sólo presencia/ausencia
+            seen = set()
+            for i, j in zip(coo.row, coo.col):
+                ri = res_of_atom[i]
+                rj = res_of_atom[j]
+                key = (ri, rj)
+                if key not in seen:
+                    out[ri, rj] = 1
+                    seen.add(key)
+        else:
+            # Sumatoria de valores
+            for i, j, v in zip(coo.row, coo.col, coo.data):
+                ri = res_of_atom[i]
+                rj = res_of_atom[j]
+                out[ri, rj] += int(v)
+        return out
+
+    # --- camino original (denso) ---
     for res_idx, res_jdx in product(atom_map.keys(), atom_map.keys()):
         atom_idxs = atom_map[res_idx]
         atom_jdxs = atom_map[res_jdx][:, np.newaxis]
@@ -376,6 +408,7 @@ def atom2res(arrin, nresidues, atom_map, norm=False):
         out[out > 0] = 1
 
     return out
+
 
 
 def _contact_info(molecule):
@@ -448,13 +481,13 @@ def _calculate_overlap(coords_tree, vdw_list, natoms, vdw_max, alpha=1.24):
     alpha: float
         Enlargement factor for attraction effects
     """
-    over = np.zeros((natoms, natoms))
+    over = sp.lil_matrix((natoms, natoms), dtype=np.uint8)
     over_sdm = coords_tree.sparse_distance_matrix(coords_tree, 2 * vdw_max * alpha)
     for (idx, jdx), distance_between in over_sdm.items():
         if idx != jdx:
             if distance_between < (vdw_list[idx] + vdw_list[jdx]) * alpha:
                 over[idx, jdx] = 1
-    return over
+    return over.tocsr() 
 
 def _calculate_csu(coords, vdw_list, fiba, fibb, natoms, coords_tree, vdw_max, water_radius=2.80):
     """
@@ -530,9 +563,10 @@ def _contact_types(hit_results, natoms, atypes):
         list of the atomtypes of each atom in the molecule
     """
 
-    contactcounter_1 = np.zeros((natoms, natoms))
-    stabilisercounter_1 = np.zeros((natoms, natoms))
-    destabilisercounter_1 = np.zeros((natoms, natoms))
+    contactcounter_1     = sp.lil_matrix((natoms, natoms), dtype=np.uint16)
+    stabilisercounter_1  = sp.lil_matrix((natoms, natoms), dtype=np.uint16)
+    destabilisercounter_1= sp.lil_matrix((natoms, natoms), dtype=np.uint16)
+
 
     for i, j in enumerate(hit_results):
         for k in j:
@@ -547,7 +581,10 @@ def _contact_types(hit_results, natoms, atypes):
                     if btype == 5:
                         destabilisercounter_1[i, k] += 1
 
-    return contactcounter_1, stabilisercounter_1, destabilisercounter_1
+    return (contactcounter_1.tocsr(),
+        stabilisercounter_1.tocsr(),
+        destabilisercounter_1.tocsr())
+
 
 def make_atom_map(res_serial):
 
@@ -629,14 +666,15 @@ def _get_contacts(nresidues, overlaps, contacts, stabilisers, destabilisers, res
     '''
     contacts_list = []
     all_contacts = []
-    for i1, i2 in product(np.arange(nresidues), np.arange(nresidues)):
+    nz = np.transpose(np.nonzero((overlaps > 0) | (contacts > 0)))
+    for i1, i2 in nz:
         if i1 == i2:
             continue
         over = overlaps[i1, i2]
         cont = contacts[i1, i2]
         stab = stabilisers[i1, i2]
         dest = destabilisers[i1, i2]
-        rcsu = (stab - dest) > 0
+        rcsu = stab > dest
 
         if (over > 0 or cont > 0):
             a = np.where(res_idx == i1)[0][0]
