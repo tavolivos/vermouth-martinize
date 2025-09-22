@@ -142,6 +142,10 @@ PROTEIN_MAP = {
     },
     "HIE": {},
     "HIP": {},
+    "HID": {},
+    "HSE": {},
+    "HSD": {},
+    "HSP": {},
     "HIS": {
         'N':        {'vrad': 1.64, 'atype': 3},
         'CA':       {'vrad': 1.88, 'atype': 7},
