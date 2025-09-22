@@ -12,8 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from scipy import sparse as sp
-
 from ..processors.processor import Processor
 import numpy as np
 from scipy.spatial.distance import euclidean
@@ -24,6 +22,7 @@ from vermouth.file_writer import deferred_open
 from collections import defaultdict
 from vermouth import __version__ as VERSION
 from pathlib import Path
+from scipy import sparse as sp
 
 # BOND TYPE
 # Types of contacts:
@@ -481,7 +480,7 @@ def _calculate_overlap(coords_tree, vdw_list, natoms, vdw_max, alpha=1.24):
     alpha: float
         Enlargement factor for attraction effects
     """
-    over = sp.lil_matrix((natoms, natoms), dtype=np.uint8)
+    over = sp.dok_matrix((natoms, natoms), dtype=np.uint8)
     over_sdm = coords_tree.sparse_distance_matrix(coords_tree, 2 * vdw_max * alpha)
     for (idx, jdx), distance_between in over_sdm.items():
         if idx != jdx:
@@ -563,9 +562,9 @@ def _contact_types(hit_results, natoms, atypes):
         list of the atomtypes of each atom in the molecule
     """
 
-    contactcounter_1     = sp.lil_matrix((natoms, natoms), dtype=np.uint16)
-    stabilisercounter_1  = sp.lil_matrix((natoms, natoms), dtype=np.uint16)
-    destabilisercounter_1= sp.lil_matrix((natoms, natoms), dtype=np.uint16)
+    contactcounter_1     = sp.dok_matrix((natoms, natoms), dtype=np.uint16)
+    stabilisercounter_1  = sp.dok_matrix((natoms, natoms), dtype=np.uint16)
+    destabilisercounter_1= sp.dok_matrix((natoms, natoms), dtype=np.uint16)
 
 
     for i, j in enumerate(hit_results):
